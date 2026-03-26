@@ -1,0 +1,213 @@
+import cv2
+import pytesseract
+import os
+import shutil
+import re
+import numpy as np
+from collections import Counter
+import configparser
+import sys
+
+# --- CONFIGURATION ---
+config = configparser.ConfigParser()
+if not config.read('config.ini'):
+    print("Error: config.ini file not found! Please create one based on config.example.ini.")
+    sys.exit(1)
+
+try:
+    TESS_PATH = config.get('Paths', 'TESS_PATH')
+    SOURCE_DIR = config.get('Paths', 'SOURCE_DIR')
+except (configparser.NoSectionError, configparser.NoOptionError) as e:
+    print(f"Error reading config.ini: {e}")
+    sys.exit(1)
+
+pytesseract.pytesseract.tesseract_cmd = TESS_PATH
+
+EXTENSIONS = ('.mp4', '.mkv', '.avi', '.mov', '.flv')
+INTERVAL_SECONDS = 60
+ROI_TOP_RATIO = 0.0
+ROI_HEIGHT_RATIO = 0.14
+ROI_WIDTH_RATIO = 0.23
+LINE_ANCHOR_RATIO = 0.28
+
+
+def sanitize_tournament_text(text):
+    text = text.replace('“', '').replace('”', '').replace('"', '')
+    text = text.replace('/', '-').replace('\\', '-')
+    text = re.sub(r'[*:<>\?|]', '', text)
+    return " ".join(text.split()).strip(". , : ; -")
+
+
+def clean_ocr_results(ocr_data, left_limit):
+    """
+    Reconstructs the header from left-anchored OCR lines inside the ROI.
+    """
+    if 'text' not in ocr_data:
+        return ""
+
+    lines = {}
+    for i in range(len(ocr_data['text'])):
+        text = ocr_data['text'][i].strip()
+        if not text:
+            continue
+
+        line_key = (
+            ocr_data['block_num'][i],
+            ocr_data['par_num'][i],
+            ocr_data['line_num'][i],
+        )
+        line = lines.setdefault(line_key, {'left': [], 'top': [], 'parts': []})
+        line['left'].append(ocr_data['left'][i])
+        line['top'].append(ocr_data['top'][i])
+        line['parts'].append(text)
+
+    if not lines:
+        return ""
+
+    ordered_lines = sorted(
+        (
+            {
+                'left': min(line['left']),
+                'top': min(line['top']),
+                'text': " ".join(line['parts']),
+            }
+            for line in lines.values()
+        ),
+        key=lambda line: (line['top'], line['left'])
+    )
+
+    final_parts = []
+    for line in ordered_lines:
+        if line['left'] <= left_limit:
+            cleaned_line = sanitize_tournament_text(line['text'])
+            if cleaned_line:
+                final_parts.append(cleaned_line)
+
+    return sanitize_tournament_text(" ".join(final_parts))
+
+def process_frame(frame):
+    h, w, _ = frame.shape
+
+    top = int(h * ROI_TOP_RATIO)
+    bottom = int(h * (ROI_TOP_RATIO + ROI_HEIGHT_RATIO))
+    right = int(w * ROI_WIDTH_RATIO)
+    roi = frame[top:bottom, 0:right]
+    left_limit = int(roi.shape[1] * LINE_ANCHOR_RATIO)
+
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    scale_factor = 2
+    scaled = cv2.resize(gray, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_CUBIC)
+    _, thresh = cv2.threshold(scaled, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    kernel = np.ones((2, 2), np.uint8)
+    thickened = cv2.dilate(thresh, kernel, iterations=1)
+    inverted = cv2.bitwise_not(thickened)
+
+    data = pytesseract.image_to_data(inverted, config='--oem 3 --psm 11', output_type=pytesseract.Output.DICT)
+
+    if 'left' in data:
+        for i in range(len(data['left'])):
+            data['left'][i] = int(data['left'][i] / scale_factor)
+            data['top'][i] = int(data['top'][i] / scale_factor)
+            data['width'][i] = int(data['width'][i] / scale_factor)
+            data['height'][i] = int(data['height'][i] / scale_factor)
+
+    return clean_ocr_results(data, left_limit=left_limit)
+
+def analyze_image(image_path):
+    """
+    Analyzes a single image (screenshot) to detect the tournament name.
+    Useful for testing.
+    """
+    frame = cv2.imread(image_path)
+    if frame is None:
+        return None
+    return process_frame(frame)
+
+def analyze_video(video_path):
+    """
+    Extracts frames from a video and determines the most common tournament name.
+    """
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return None, 0, 0
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if fps <= 0 or total_frames <= 0:
+        cap.release()
+        return None, 0, 0
+        
+    duration_seconds = int(total_frames / fps)
+    checks = 0
+    raw_readings = []
+
+    for sec in range(INTERVAL_SECONDS, duration_seconds, INTERVAL_SECONDS):
+        frame_id = int(sec * fps)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_id)
+        ret, frame = cap.read()
+        if not ret: continue
+            
+        checks += 1
+        cleaned = process_frame(frame)
+        
+        if cleaned:
+            raw_readings.append(cleaned)
+
+    cap.release()
+    if not raw_readings: return None, 0, checks
+
+    data_counter = Counter(raw_readings)
+    common = data_counter.most_common(1)
+    
+    if not common: return None, 0, checks
+    return common[0][0], common[0][1], checks
+
+def move_video(file_path, subdir_path, tournament, matches, checks):
+    """
+    Handles the physical file moving logic.
+    """
+    file = os.path.basename(file_path)
+    target_dir = os.path.join(subdir_path, tournament)
+    if not os.path.exists(target_dir):
+        os.makedirs(target_dir)
+    
+    print(f"  [SORT] {file} -> {tournament} ({matches}/{checks})")
+    shutil.move(file_path, os.path.join(target_dir, file))
+
+def process_directory(source_dir):
+    """
+    Traverses the directory, analyzes videos, and moves them.
+    """
+    subdirs = [d for d in os.listdir(source_dir) if os.path.isdir(os.path.join(source_dir, d))]
+    
+    for subdir in subdirs:
+        if subdir.startswith(('_', '.')): continue
+        
+        subdir_path = os.path.join(source_dir, subdir)
+        video_files = [f for f in os.listdir(subdir_path) if f.lower().endswith(EXTENSIONS)]
+        
+        for file in video_files:
+            file_path = os.path.join(subdir_path, file)
+            tournament, m, c = analyze_video(file_path)
+            
+            if tournament:
+                move_video(file_path, subdir_path, tournament, m, c)
+            else:
+                print(f"  [SKIP] {file} (Header incomplete)")
+
+def main():
+    if not os.path.exists(TESS_PATH):
+        print("Tesseract path error."); input(); return
+
+    print(f"{'='*80}\nCHESS TOURNAMENT SORTER (THICK-TEXT MODE)\n{'='*80}")
+
+    try:
+        process_directory(SOURCE_DIR)
+    except Exception as e:
+        print(f"\nCRITICAL ERROR: {e}")
+
+    # Pauses at the end as requested
+    input("\nTask complete. Press Enter to exit...")
+
+if __name__ == "__main__":
+    main()
