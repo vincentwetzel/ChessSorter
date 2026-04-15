@@ -30,6 +30,7 @@ You can configure the behavior of the script by modifying the constants at the t
 ## How it Works
 
 1. **Directory Scanning**: The script first processes new files in the `TO_SORT_DIR` staging folder. It uses OCR to determine the tournament name and parses the filename for a date bracket (e.g., `[YYYY-MM-DD]`) to sort the file into a `YYYY - MM` parent folder. It then iterates through the subdirectories of the `SOURCE_DIR` (ignoring hidden folders starting with `_` or `.`).
+1. **Directory Scanning**: The script first processes new files in the `TO_SORT_DIR` staging folder. It uses OCR to determine the tournament name and parses the filename for a date bracket (e.g., `[YYYY-MM-DD]`) to sort the file into a `YYYY - MM` parent folder. If the staging folder is empty after sorting, it is automatically deleted. It then iterates through the subdirectories of the `SOURCE_DIR` (ignoring hidden folders starting with `_` or `.`).
 2. **Frame Extraction**: For each video, a frame is extracted every `INTERVAL_SECONDS`.
 3. **Region of Interest (ROI)**: The frame is cropped to the portion of the top-left overlay where tournament headers usually appear, keeping the OCR focused on the header instead of nearby commentary text.
 4. **Pre-processing**:

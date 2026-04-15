@@ -36,4 +36,5 @@ The Chess Tournament Sorter operates as an automated pipeline, where distinct in
 - Aggregates all cleaned OCR readings for a given video and determines the most common result (majority vote).
 - If a valid tournament name is confidently identified, it creates a new directory for that tournament (if it doesn't already exist).
 - Moves the video file from its source directory into the corresponding tournament directory.
+- **Staging Cleanup:** Automatically deletes the staging folder (`TO_SORT_DIR`) if it is empty after all its contents have been successfully sorted.
 - **Folder Renaming:** Scans tournament directories and their parent subdirectories to count the number of video files they contain, renaming the directories to append this total count in square brackets with a leading space (e.g., `Tournament Name [2]`). It actively updates inaccurate counts if the folder contents change.

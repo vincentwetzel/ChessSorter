@@ -139,7 +139,7 @@ Video File
 
 **Functions:** `move_video()`, `update_folder_video_counts()`, `process_directory()`, `process_staging_directory()`
 
-- **process_staging_directory():** Processes loose video files in the `TO_SORT_DIR` staging area using OCR to find the tournament name. Extracts the upload date bracket (e.g., `[YYYY-MM-DD]`) from the filename to route the video into the correct `YYYY - MM` parent directory within `SOURCE_DIR`.
+- **process_staging_directory():** Processes loose video files in the `TO_SORT_DIR` staging area using OCR to find the tournament name. Extracts the upload date bracket (e.g., `[YYYY-MM-DD]`) from the filename to route the video into the correct `YYYY - MM` parent directory within `SOURCE_DIR`. If the staging directory is empty after sorting, it is deleted.
 - **process_directory():** Iterates over all subdirectories of `SOURCE_DIR`, skipping hidden folders (`_` or `.` prefix). For each video file, calls `analyze_video()` and then `move_video()` if a tournament name is found.
 - **move_video():** Checks for an existing tournament folder (case-insensitive match, accounting for the `[N]` suffix). Creates a new directory if none exists. Moves the video file using `shutil.move()`.
 - **update_folder_video_counts():** Walks through all tournament folders at depth 2 and parent subdirectories at depth 1. Counts `.mp4`, `.mkv`, etc. files inside each. Renames the directory to append `[count]` if the current suffix is missing or inaccurate. Also counts loose video files in parent directories and updates their names accordingly.

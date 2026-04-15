@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `config.ini`-based configuration for `TESS_PATH` and `SOURCE_DIR` (replacing hardcoded paths in `main.py`).
 - `config.example.ini` as a template for new installations.
 - Phase 4: File counting and logging — recursively counts all non-script files in `SOURCE_DIR` and appends a timestamped entry to `file_count_log.txt`.
+- Automatic cleanup of the `TO_SORT_DIR` staging directory, deleting it if it becomes empty after sorting operations.
 
 ### Changed
 - Moved `TESS_PATH` and `SOURCE_DIR` from inline constants to `config.ini`, with proper error handling for missing or malformed configuration.
