@@ -69,7 +69,16 @@ def process_staging_directory(staging_dir, dest_dir):
         else:
             print(f"  [SKIP] {file} (Header incomplete)")
             skipped_count += 1
-            
+
+    if os.path.exists(staging_dir):
+        remaining = [f for f in os.listdir(staging_dir) if f.lower() not in ('desktop.ini', 'thumbs.db', '.ds_store')]
+        if not remaining:
+            try:
+                shutil.rmtree(staging_dir)
+                print(f"  [INFO] Staging directory '{os.path.basename(staging_dir)}' was empty and has been deleted.")
+            except OSError as e:
+                print(f"  [ERROR] Could not delete staging directory: {e}")
+
     return sorted_count, skipped_count
 
 def process_directory(source_dir):
@@ -94,11 +103,4 @@ def process_directory(source_dir):
                 print(f"  [SKIP] {file} (Header incomplete)")
                 skipped_count += 1
                 
-    if os.path.exists(staging_dir) and not os.listdir(staging_dir):
-        try:
-            os.rmdir(staging_dir)
-            print(f"  [INFO] Staging directory '{os.path.basename(staging_dir)}' was empty and has been deleted.")
-        except OSError as e:
-            print(f"  [ERROR] Could not delete staging directory: {e}")
-
     return sorted_count, skipped_count
